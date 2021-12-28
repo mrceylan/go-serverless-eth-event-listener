@@ -1,0 +1,64 @@
+
+service: myservice
+
+frameworkVersion: '2'
+
+custom:
+  kinesisStreamName: ExampleContactEventStream
+  ssmKey: '/EthEventListener/LAST_BLOCK_NUMBER'
+  eventName: ExampleEvent
+  initialBlockNumber: 11606720
+
+provider:
+  name: aws
+  runtime: go1.x
+  lambdaHashingVersion: 20201221
+  environment:
+    KINESIS_STREAM_NAME: ${self:custom.kinesisStreamName}
+    SSM_KEY: ${self:custom.ssmKey}
+    EVENT_NAME: ${self:custom.eventName}
+    ETH_NODE_URL: wss://ropsten.infura.io/ws/v3/
+    CONTRACT_ADDRESS: 0x44cB5D7BB71475BF40B15601fFa88187d6cdf906
+  iam:
+    role:
+      statements:
+        - Effect: 'Allow'
+          Action:
+            - 'ssm:PutParameter'
+            - 'ssm:GetParameter'
+          Resource:
+            - !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${self:custom.ssmKey}'
+            
+        - Effect: 'Allow'
+          Action:
+            - 'kinesis:PutRecord'
+          Resource:
+            - !Sub 'arn:aws:kinesis:${AWS::Region}:${AWS::AccountId}:stream/${self:custom.kinesisStreamName}'
+
+
+package:
+  patterns:
+    - '!./**'
+    - ./bin/**
+
+resources:
+  Resources:
+    KinesisStream:
+      Type: AWS::Kinesis::Stream
+      Properties:
+        Name: ${self:custom.kinesisStreamName}
+        ShardCount: 1
+    LatestBlockNumberParameter:
+      Type: AWS::SSM::Parameter
+      Properties:
+        Name: ${self:custom.ssmKey}
+        Type: String
+        Value: ${self:custom.initialBlockNumber}
+        Description: Latest block number.
+
+functions:
+  main:
+    handler: bin/main
+    events:
+      - schedule:
+          rate: rate(3 minutes)
